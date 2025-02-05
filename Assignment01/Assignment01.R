@@ -32,7 +32,7 @@ plot(ypcg ~ ctax,
      main = "The association between the average corporate tax
      rate '00-'08 and the average GDP per capita growth 
      '00-'15",
-     xlab = "Average C orporate Tax R ate ’00-’08",
+     xlab = "Average Corporate Tax Rate '00-'08",
      ylab = "Average GDP per capita Growth '00-'15",
      col='blue',
      pch = 16
