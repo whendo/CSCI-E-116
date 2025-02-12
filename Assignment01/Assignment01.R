@@ -46,4 +46,33 @@ for (i in seq_len(nrow(abbrs))){
   c = corporate.tax[corporate.tax$country==abbrs[i,]$fullname,]
   text(x=c$ctax,y=c$ypcg, labels = abbrs[i,]$abb, pos = 1)
 }
+#####
+# Briefly explain why I use GDP per capita in 2000, not 2015? Why do I use corporate tax
+# rates averaged from 2000 to 2008 instead of from 2000 to 2015?
+#####
+# We use the data points around year 2000 because we want to minimize outside effects
+# and are aiming to focus on short term change in GDP growth.
+
+# The dataset provides more variables (description as follows). Play around by adding these
+# variables. And present the best model (using adj. R2) and briefly explain the result
+test = lm(ypcg ~ . -country, data=corporate.tax)
+summary(test)
+
+test = lm(ypcg ~ ypc2000 + ctax + ihc -country, data=corporate.tax)
+summary(test)
+
+test = lm(ypcg ~ ypc2000 + ctax  -country, data=corporate.tax)
+summary(test)
+
+#Explanation
+# The highest Adj R^2 value was for the first model that included all variables except
+# the country variable. This model included quite a few explanatory variables that weren't
+# statistically significant per their p values. The overfitting caused by these 
+# insignificant variables skews the Adj R^2 value, leading us to believe the model is better
+# than it is. The model with no insignificant variables with an alpha < 0.05 led to an 
+# Adj R^2 of 0.52, much lower than the model with all the variables. 
+#####
+# Part B: See Exec summary doc separate from this file
+#####
+source("~/Documents/workspace/harvard/CSCI-E-116/Assignment01/Data and Script 2/H02b_crossSection.R", echo = TRUE)
 
