@@ -1,0 +1,73 @@
+---
+title: "Assignment 04"
+author: "Bill Henderson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(quantmod)
+library(tidyverse)
+library(xts)
+library(ggplot2)
+```
+
+# Data Collection and EDA
+## Import Data
+```{r}
+getSymbols("TOTALSA", src="FRED") # Total Vehicle Sales
+getSymbols("PAYEMS", src="FRED") # US payroll jobs
+getSymbols("DFF", src="FRED") # Federal fund rates
+getSymbols("UNRATE", src="FRED") # Unemployment rates
+getSymbols("NASDAQCOM", src="FRED") # Stock market prices
+getSymbols("USSTHPI", src="FRED") # Housing market prices
+getSymbols("CUSR0000SETB01", src="FRED") # Gasoline price in CPI
+
+
+```
+## Visualizations
+```{r}
+plot(TOTALSA)
+plot(PAYEMS)
+plot(DFF)
+plot(UNRATE)
+plot(NASDAQCOM)
+plot(USSTHPI)
+plot(CUSR0000SETB01)
+
+```
+## Convert to Quarterly
+```{r}
+cusr.q = to.quarterly(CUSR0000SETB01)
+dff.q = to.quarterly(DFF)
+nasdaq.q = to.quarterly(NASDAQCOM)
+payems.q = to.quarterly(PAYEMS)
+totalsa.q = to.quarterly(TOTALSA)
+unrate.q = to.quarterly(UNRATE)
+ussthpi.q = to.quarterly(USSTHPI)
+```
+## Select the sample period from 1976Q2 to 2023Q2 (June) as the trainset (in-sample)
+```{r}
+train.period = c("1976-04/2023-04")
+cusr.train = cusr.q[train.period]
+dff.train= dff.q[train.period]
+nasdaq.train = nasdaq.q[train.period]
+payems.train = payems.q[train.period]
+totalsa.train = totalsa.q[train.period]
+unrate.train = unrate.q[train.period]
+ussthpi.train = ussthpi.q[train.period]
+```
+
+### Are the datasets stationary
+```{r}
+plot(cusr.train)
+plot(dff.train)
+plot(nasdaq.train)
+plot(payems.train)
+plot(totalsa.train)
+plot(unrate.train)
+plot(ussthpi.train)
+```
+No, these time series are not stationary. TOTALSA is close, but still seems the mean increases over time. 

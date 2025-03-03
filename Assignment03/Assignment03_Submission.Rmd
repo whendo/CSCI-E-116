@@ -1,0 +1,340 @@
+---
+title: "Assignment03_Submission"
+author: "Bill Henderson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(broom)
+library(kableExtra)
+library(data.table)
+library(dplyr)
+library(ggplot2)
+library(prophet)
+library(quantmod) 
+library(lubridate)
+library(readxl)
+library(almanac)
+library(MASS)
+library(randomForest)
+library(caret)
+
+```
+
+# Part A: A Practice to Enhance Prophet's Prediction Accuracy
+
+## m11 Model Revisions
+
+### Original m11 Model
+
+```{r}
+# from H03c_prophet.R script
+# setwd("~/Documents/workspace/harvard/CSCI-E-116/Assignment03/Data and Script 3")
+tsa = read_excel("Data and Script 3/W09e_tsa.xlsx") 
+tsa_test = read_excel("Data and Script 3/W09e_tsa.xlsx", sheet="test") 
+
+tsa %>% ggplot() +
+  geom_line(aes(x=ds, y=travel_train/1000000), color="blue") +
+  ylab('# of daily air travelers (Million)') 
+
+tsa = tsa %>% rename(y=travel_train)
+
+covid = data_frame(
+  holiday = 'covid',
+  ds = seq(as.Date('2020-3-15'), to=as.Date('2022-3-1'), by='days'),
+  lower_window = 0,
+  upper_window = 1
+)
+
+m11 = prophet(tsa)#, holidays = covid, daily.seasonality = TRUE)
+
+future = make_future_dataframe(m11, periods = 81) # Size of testset
+tail(future)
+forecast11 = predict(m11, future)
+tail(forecast11[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+plot(m11, forecast11)
+prophet_plot_components(m11, forecast11)
+
+forecast11a = subset(forecast11, ds>=as.Date("2024-07-01"))
+
+ggplot() +
+geom_line(data=forecast11a, aes(x=ds, y=yhat), color="blue") +  
+geom_line(data=tsa_test, aes(x=ds, y=travel_test), color="red") 
+rmse11 = sqrt(mean((forecast11a$yhat-tsa_test$travel_test)^2))
+```
+
+RMSE = `r rmse11`
+
+### m11 Modified
+
+Looking for the minimum RMSE by trying all the months in 2022
+
+```{r}
+min.rmse = data.frame(trend=1:12)
+for (adj.month in 1:12){
+  covid = data_frame(
+    holiday = 'covid',
+    ds = seq(as.Date('2020-3-15'), to=as.Date(
+      paste(paste("2022",adj.month,sep="-"),"1", sep="-")
+      ), by='days'),
+    lower_window = 0,
+    upper_window = 1
+  )
+  
+  m11mod = prophet(tsa, holidays = covid, daily.seasonality = TRUE)
+  
+  future = make_future_dataframe(m11mod, periods = 81) # Size of testset
+  tail(future)
+  forecast11mod = predict(m11mod, future)
+  tail(forecast11mod[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+  # plot(m11, forecast11mod)
+  #prophet_plot_components(m11mod, forecast11mod)
+  
+  forecast11amod = subset(forecast11mod, ds>=as.Date("2024-07-01"))
+  
+  # ggplot() +
+  # geom_line(data=forecast11amod, aes(x=ds, y=yhat), color="blue") +  
+  # geom_line(data=tsa_test, aes(x=ds, y=travel_test), color="red") 
+  min.rmse$rmse[adj.month] = sqrt(mean((forecast11amod$yhat-tsa_test$travel_test)^2))
+
+}
+
+```
+
+```{r}
+
+
+min.rmse |>
+ggplot(aes(x=trend, y=rmse, label=trend)) +
+  geom_line() +
+  geom_point(data=min.rmse[which.min(min.rmse$rmse),], color="red", size=3) +
+  geom_label(data=min.rmse[which.min(min.rmse$rmse),], nudge_x = 0.5)
+
+
+```
+
+Building the new output for July (month 7), which provides the minimum RMSE for our COVID end month within 2022.
+
+(Lazily copied my code from above and shortened the list to just 7)
+
+```{r}
+for (adj.month in 7){
+  covid = data_frame(
+    holiday = 'covid',
+    ds = seq(as.Date('2020-3-15'), to=as.Date(
+      paste(paste("2022",adj.month,sep="-"),"1", sep="-")
+      ), by='days'),
+    lower_window = 0,
+    upper_window = 1
+  )
+  
+  m11mod = prophet(tsa, holidays = covid, daily.seasonality = TRUE)
+  
+  future = make_future_dataframe(m11mod, periods = 81) # Size of testset
+  tail(future)
+  forecast11mod = predict(m11mod, future)
+  tail(forecast11mod[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+  plot(m11, forecast11mod)
+  prophet_plot_components(m11mod, forecast11mod)
+  
+  forecast11amod = subset(forecast11mod, ds>=as.Date("2024-07-01"))
+  
+  ggplot() +
+  geom_line(data=forecast11amod, aes(x=ds, y=yhat), color="blue") +
+  geom_line(data=tsa_test, aes(x=ds, y=travel_test), color="red")
+  rmse11mod = sqrt(mean((forecast11amod$yhat-tsa_test$travel_test)^2))
+}
+
+```
+
+RMSE value is `r round(rmse11mod)`
+
+Now to remove the federal holidays for our timeframe.
+
+```{r}
+# New Year’s Day January 1
+on_newyears = hol_new_years_day()
+# Martin Luther King’s Birthday 3rd Monday in January
+on_mlk = hol_us_martin_luther_king_junior_day()
+# Washington’s Birthday 3rd Monday in February
+on_presday = hol_us_presidents_day()
+# Memorial Day last Monday in May
+on_memorial = hol_us_memorial_day()
+# Juneteenth National Independence Day June 19
+on_juneteenth = hol_us_juneteenth()
+# Independence Day July 4
+on_indep = hol_us_independence_day()
+# Labor Day 1st Monday in September
+on_labor = hol_us_labor_day()
+# Columbus Day 2nd Monday in October
+on_columb = hol_us_indigenous_peoples_day()
+# Veterans’ Day November 11
+on_vets = hol_us_veterans_day()
+# Thanksgiving Day 4th Thursday in November
+on_thanks = hol_us_thanksgiving()
+# Christmas Day December 25
+on_christmas = hol_christmas()
+
+sched = runion(on_newyears, on_mlk, on_presday, on_memorial, on_juneteenth,
+               on_indep, on_labor, on_columb, on_vets, on_thanks, on_christmas)
+
+fed.holidays = alma_events(sched, year = 2019:2024)
+```
+
+```{r}
+  covid = data_frame(
+    holiday = 'covid',
+    ds = seq(as.Date('2020-3-15'), to=as.Date("2022-7-1"), by='days'),
+    lower_window = 0,
+    upper_window = 1
+  )
+
+  fed.holidays.df = data_frame(
+    holiday = "fed.holidays",
+    ds = fed.holidays,
+    lower_window = 0,
+    upper_window =1
+  )
+  all.holidays = merge(covid, fed.holidays.df)
+  
+  m11mod = prophet(tsa, holidays = all.holidays, daily.seasonality = TRUE)
+  
+  future = make_future_dataframe(m11mod, periods = 81) # Size of testset
+  tail(future)
+  forecast11mod = predict(m11mod, future)
+  tail(forecast11mod[c('ds', 'yhat', 'yhat_lower', 'yhat_upper')])
+  plot(m11, forecast11mod)
+  prophet_plot_components(m11mod, forecast11mod)
+  
+  forecast11amod = subset(forecast11mod, ds>=as.Date("2024-07-01"))
+  
+  ggplot() +
+  geom_line(data=forecast11amod, aes(x=ds, y=yhat), color="blue") +
+  geom_line(data=tsa_test, aes(x=ds, y=travel_test), color="red")
+  rmse11mod = sqrt(mean((forecast11amod$yhat-tsa_test$travel_test)^2))
+
+
+```
+
+The RMSE with holidays and the COVID blocks removed is `r round(rmse11mod,2)`. Removing the holidays seemed to worsen the results compared to just the optimized end COVID date.
+
+# Part B: **Model/Features Selection**
+
+## Model 1
+
+### Data Ingress
+
+```{r}
+c.data = read.csv("new2.csv")
+summary(c.data) %>%
+  kbl() %>%
+  kable_styling()
+```
+
+### Correlation
+
+```{r}
+corr.data = round(cor(
+  c.data$deathp,
+  subset(c.data,select=-c(name,statename,NAME,deathp,X)),
+  use="na.or.complete"
+  ),2)
+
+corr.df = as.data.frame(as.table(corr.data))
+corr.df['abs_Freq'] = abs(corr.df$Freq)
+corr.df %>%
+  replace(is.na(.), 1.0) %>%
+  arrange(desc(abs_Freq)) %>%
+  filter(abs_Freq >= 0.9) %>%
+  kable()
+```
+
+So, the one variable with a correlation magnitude greater that 0.9 is $deathp520$ and will be remove. This makes sense since the variable are very closely related. Also removing the location indicators since they're all categorical variables, adding a ton of factors to an already large number of predictors. Even the numeric location variables would have to be treated as categories since their numbers don't make any sense in a continuous numerical observation.
+
+### Initial Model Generation
+
+```{r}
+no.na.data = na.omit(c.data)
+
+set.seed(222)
+
+# Setting up a training and test dataset
+ind <- sample(2, nrow(no.na.data), replace = TRUE, prob = c(0.7, 0.3))
+train <- no.na.data[ind==1,]
+test <- no.na.data[ind==2,]
+
+
+m01 = lm(deathp ~ . -deathp520 -X - name - NAME -statename -stateid -county, data = train)
+summary(m01)
+```
+
+### Stepwise Treatment
+
+```{r echo=T, results='hide'}
+
+m01.step = stepAIC(m01, direction="both")
+```
+
+Verbose output suppressed.
+
+### ANOVA Summary
+
+And here's the ANOVA analysis of the stepwise model search:
+
+```{r}
+m01.step$anova
+```
+
+```{r}
+summary(m01.step)
+```
+
+### Prediction
+
+```{r}
+p1 = predict(m01.step, train)
+rmse01.train = round(sqrt(mean((p1-train$deathp)^2)),2)
+
+p1.test = predict(m01.step, test)
+rmse01.test = round(sqrt(mean((p1.test-test$deathp)^2)),2)
+```
+
+## Model 2
+
+### Random Forest
+
+```{r}
+rf <- randomForest(deathp ~ . -deathp520 -X - name - NAME -statename -stateid -county, data=train, proximity=TRUE)
+
+```
+
+```{r}
+rf
+```
+
+```{r}
+p2 = predict(rf, train)
+rmse02.train = round(sqrt(mean((p2-train$deathp)^2)),2)
+
+p2.test = predict(rf, test)
+rmse02.test = round(sqrt(mean((p2.test-test$deathp)^2)),2)
+```
+
+## Comparison
+
+Our RSME values were as follows:
+
+```{r echo=FALSE, include=TRUE}
+data.frame(
+  model = c('Baseline','Model 1', 'Model 2'),
+  rmse = c(rmse11mod, rmse01.test, rmse02.test)
+) %>%
+  kbl() %>%
+  kable_classic_2(full_width = F)
+```
+
+It would appear that the RMSE for the Baseline Time Series Model is significantly higher than the linear regression and random forest models from the non-time series models, even after some optimization. I believe the major factor leading to this discrepancy is the much higher number of predictors in both the regression and forest models versus the time series. These additional predictors give us a wider variety of information to correlate a response as opposed to the time series model only having the single statistic over time to predict the future values. The time series data also has a significant random walk impact, which is very hard to predict effectively.

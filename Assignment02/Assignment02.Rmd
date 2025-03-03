@@ -1,0 +1,253 @@
+---
+title: "Assignment02"
+author: "Bill Henderson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+# Load libraries
+library(AICcmodavg)
+library(broom)
+library(corrr)
+library(dplyr)
+library(knitr)
+library(kableExtra)
+library(readr)
+library(tidyr)
+library(readxl)
+
+options(digits=3)
+country.data = read_xlsx("CountryData.xlsx")
+```
+
+## Replicate All 10 Equations in Appendix 2
+
+### Equation 1
+
+```{r}
+eq01 = lm(rgdpg ~ econg + co2g + eximg , data=country.data[country.data$country != "China",, drop=TRUE])
+summary(eq01) %>%
+  tidy() %>%
+  kable()
+```
+### Equation 2
+```{r}
+eq02 = lm(rgdpg ~ econg + co2g + eximg , data=country.data)
+summary(eq02) %>%
+  tidy() %>%
+  kable()
+```
+
+### Equation 3
+```{r}
+countries = c( "Australia", "Brazil", "Canada", "Germany", "India", "Japan", "Russia", "South Korea", "United Kingdom", "United States")
+
+eq03 = lm(rgdpg ~ econg + co2g + eximg + country , data=subset(country.data, country %in% countries ))
+summary(eq03) %>%
+  tidy() %>%
+  kable()
+```
+
+### Equation 4
+```{r}
+countries = c( "Austrailia", "Brazil", "Canada", "China", "Germany", "India", "Japan", "Russia", "South Korea", "United Kingdom", "United States")
+
+eq04 = lm(rgdpg ~ econg + co2g + eximg + country , data=subset(country.data, country %in% countries ))
+summary(eq04) %>%
+  tidy() %>%
+  kable()
+```
+### Equation 5
+```{r}
+
+
+eq05 =  lm(rgdpg ~ econg + co2g + eximg + factor(year), data = country.data[country.data$country != "China",, drop=TRUE])
+summary(eq05) %>%
+  tidy() %>%
+  kable()
+```
+### Equation 6
+```{r}
+
+eq06 =  lm(rgdpg ~ econg + co2g + eximg + factor(year), data = country.data)
+summary(eq06) %>%
+  tidy() %>%
+  kable()
+```
+
+### Equation 7
+```{r}
+
+eq07 =  lm(rgdpg ~ econg + co2g + eximg + +country + factor(year), data = country.data[country.data$country != "China",, drop=TRUE])
+summary(eq07) %>%
+  tidy() %>%
+  kable()
+```
+
+### Equation 8
+```{r}
+# country.data$year = factor(country.data$year)
+
+eq08 =  lm(rgdpg ~ econg + co2g + eximg + +country + factor(year), data = country.data)
+summary(eq08) %>%
+  tidy() %>%
+  kable()
+```
+
+### Equation 9
+```{r}
+# country.data['time_trend'] = country.data$year - 2000
+eq09 =  lm(rgdpg ~ econg + co2g + year, data = country.data[country.data$country != "China",, drop=TRUE])
+summary(eq09) %>%
+  tidy() %>%
+  kable()
+```
+### Equation 10
+```{r}
+eq10 =  lm(rgdpg ~ econg + co2g +  year, data = country.data)
+summary(eq10) %>%
+  tidy() %>%
+  kable()
+```
+## Predict and plot Eq01 and 04
+Use “predict” function, you will be able to make in-sample predictions as shown as blue
+line (Eq01) and green line (Eq04) in the charts in Appendix 1. Make prediction and plot
+those charts for three countries: U.S., China, and the other one of your choice.
+
+```{r}
+eq01.preds = predict(eq01)
+eq04.preds = predict(eq04)
+
+china.idx = which(country.data$country == "China")
+us.idx = which(country.data$country == "United States")
+uk.idx = which(country.data$country == "United Kingdom")
+
+china.01.preds = eq01.preds[china.idx]
+us.01.preds = eq01.preds[us.idx]
+uk.01.preds = eq01.preds[uk.idx]
+
+china.04.preds = eq04.preds[china.idx]
+us.04.preds = eq04.preds[us.idx]
+uk.04.preds = eq04.preds[uk.idx]
+
+matplot(
+  country.data$year[us.idx],
+  cbind(us.01.preds,us.04.preds,country.data$rgdpg[us.idx]),
+  type = "b",
+  pch = c(15,2,1),
+  cex = 1,
+  lwd = c(3,1,1),
+  col = c("blue", "green", "red"),
+  main = "U.S. Real GDP Growth Rate and Model Estimation",
+  ylab = "",
+  xlab= "",
+  lty=1
+)
+legend("bottomleft",
+       legend = c("OLS Model w/o China",
+                  "Fixed Effect Model w China",
+                  "Official Release"
+                  ),
+       col = c("blue", "green", "red"),
+       lty=1,
+       pch = c(15,2,1),
+       cex = 1,
+       lwd = c(3,1,1),
+       )
+
+matplot(
+  country.data$year[china.idx],
+  cbind(china.01.preds,china.04.preds,country.data$rgdpg[china.idx]),
+  type = "b",
+  pch = c(15,2,1),
+  cex = 1,
+  lwd = c(3,1,1),
+  col = c("blue", "green", "red"),
+  main = "China Real GDP Growth Rate and Model Estimation",
+  ylab = "",
+  xlab= "",
+  lty=1
+)
+legend("bottomleft",
+       legend = c("OLS Model w/o China",
+                  "Fixed Effect Model w China",
+                  "Official Release"
+                  ),
+       col = c("blue", "green", "red"),
+       lty=1,
+       pch = c(15,2,1),
+       cex = 1,
+       lwd = c(3,1,1),
+       )
+
+matplot(
+  country.data$year[uk.idx],
+  cbind(uk.01.preds,uk.04.preds,country.data$rgdpg[uk.idx]),
+  type = "b",
+  pch = c(15,2,1),
+  cex = 1,
+  lwd = c(3,1,1),
+  col = c("blue", "green", "red"),
+  main = "United Kingdom Real GDP Growth Rate and Model Estimation",
+  ylab = "",
+  xlab= "",
+  lty=1
+)
+legend("bottomleft",
+       legend = c("OLS Model w/o China",
+                  "Fixed Effect Model w China",
+                  "Official Release"
+                  ),
+       col = c("blue", "green", "red"),
+       lty=1,
+       pch = c(15,2,1),
+       cex = 1,
+       lwd = c(3,1,1),
+       )
+```
+
+## Run Equations 11 and 12
+```{r}
+country.data.update = read_excel("CountryData_update.xlsx")
+
+#RGDP = 1.36 + 0.47 * ECONG + 0.12 * CO2G + 0.05 * EXIMG + 0.09 *HPG
+
+eq11 = lm(rgdpg ~ econg + co2g + eximg + hpg , data=country.data.update)
+summary(eq11)
+
+eq12 = lm(rgdpg ~ econg + co2g + eximg   , data=country.data.update)
+summary(eq12)
+
+
+```
+## Quick Comparison of Equations 1-12
+As stated in the article, the simplicity and elegance of a three predictor model to predict something like GDP growth rate is very intriguing. This study is a great example of the value of our field and how a very complex system can sometimes be distilled down to a few essential elements. The point Dr. Yu outlined in his write up about China's odd data is seen throughout the modles. 
+
+Equations 01 and 02 clearly show how simple the real GDP growth rate can be represented in a model, which again, is really an interesting thing to see. Moving on to 
+
+Equations 03 and 04, at first glance, it would appear that strong economies have greater significance when including national categorical indicators, but as you go down the list you see Russia as barely significant and the UK and US not significant at all. This could be interesting to dig into as maybe this nations are outliers as far as GDP values,  or maybe the data sources are measuring them in a way that pushes them to the margins, making them stick out. 
+
+Equations 5 and 6, where we took into account a categorical view of the year, the vast majority of the year factors made no significant impact, showing very high p values. Seeing as there were only 4-5 years that showed reasonably low p-values, I would think these years were outliers for various reasons, be recessions or large, financial impacting events. 
+
+Equations 7 and 8 combined the last two pairs of additions, categorical nations and years. The addition of the years seemed to mute the significance of the year factors while still displaying the odd results of which countries were significant over others in the model. All of the coefficients were of significant size, so they were all impactful, but many had large standard errors, which makes them far less useful as a predictor. This was seen before as well.
+
+Finally, from the first analysis, we have Equations 10 and 11, which added a time trend as a value, not as a factor, which didn't appear to be significant to the results and actually had an error comparable to the coefficient, so probably noise at best.
+
+Looking at equations 11 and 12, the addition of the Housing Price Growth metric did seem to tighten up the model quite a bit, increasing the $R^2$ value quite a bit while show a low p-value. Looking at the summary from equation 11, it looks like that $CO_2$ emmisions could almost be removed when including the housing indicator.
+
+## Prediction on Eq 11
+If we assume China’s input growth (%) in 2023 is as follows: econg= +4.4, co2g= +3.6,
+eximg= -6, hpg= -20, what is the predicted China’s GDP growth based on Equation 11.
+
+```{r}
+metrics = data.frame(
+  econg = 4.4,
+  co2g = 3.6,
+  eximg = -6,
+  hpg = -20
+)
+prediction = predict(eq11, newdata = metrics)
+```
+The prediction from the above metrics would be `r prediction`.
