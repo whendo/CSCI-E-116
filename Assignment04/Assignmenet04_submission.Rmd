@@ -12,6 +12,11 @@ library(quantmod)
 library(tidyverse)
 library(xts)
 library(ggplot2)
+library(MASS)
+library(forecast)
+library(quantmod)
+library(tseries)
+library(urca)
 ```
 
 # Data Collection and EDA
@@ -29,6 +34,7 @@ getSymbols("CUSR0000SETB01", src="FRED") # Gasoline price in CPI
 ```
 ## Visualizations
 ```{r}
+par(mfrow=c(1,1))
 plot(TOTALSA)
 plot(PAYEMS)
 plot(DFF)
@@ -38,26 +44,18 @@ plot(USSTHPI)
 plot(CUSR0000SETB01)
 
 ```
-## Convert to Quarterly
-```{r}
-cusr.q = to.quarterly(CUSR0000SETB01)
-dff.q = to.quarterly(DFF)
-nasdaq.q = to.quarterly(NASDAQCOM)
-payems.q = to.quarterly(PAYEMS)
-totalsa.q = to.quarterly(TOTALSA)
-unrate.q = to.quarterly(UNRATE)
-ussthpi.q = to.quarterly(USSTHPI)
-```
-## Select the sample period from 1976Q2 to 2023Q2 (June) as the trainset (in-sample)
+## Convert to Quarterly and select the sample period from 1976Q2 to 2023Q2 (June) as the trainset (in-sample)
 ```{r}
 train.period = c("1976-04/2023-04")
-cusr.train = cusr.q[train.period]
-dff.train= dff.q[train.period]
-nasdaq.train = nasdaq.q[train.period]
-payems.train = payems.q[train.period]
-totalsa.train = totalsa.q[train.period]
-unrate.train = unrate.q[train.period]
-ussthpi.train = ussthpi.q[train.period]
+test.period = c("2023-06/2024-03")
+totalsa.test = apply.quarterly(TOTALSA[test.period], colMeans, na.rm=T)
+cusr.train = apply.quarterly(CUSR0000SETB01[train.period], colMeans, na.rm=T)
+dff.train = apply.quarterly(DFF[train.period], colMeans, na.rm=T)
+nasdaq.train = apply.quarterly(NASDAQCOM[train.period], colMeans, na.rm=T)
+payems.train = apply.quarterly(PAYEMS[train.period], colMeans, na.rm=T)
+totalsa.train = apply.quarterly(TOTALSA[train.period], colMeans, na.rm=T)
+unrate.train = apply.quarterly(UNRATE[train.period], colMeans, na.rm=T)
+ussthpi.train = apply.quarterly(USSTHPI[train.period], colMeans, na.rm=T)
 ```
 
 ### Are the datasets stationary
@@ -69,5 +67,100 @@ plot(payems.train)
 plot(totalsa.train)
 plot(unrate.train)
 plot(ussthpi.train)
+
 ```
-No, these time series are not stationary. TOTALSA is close, but still seems the mean increases over time. 
+Only TOTALSA, DFF, UNRATE, and CUSR are stationary. The others need treatment
+```{r}
+cusr.train.st = diff(log(cusr.train))
+dff.train.st = dff.train
+nasdaq.train.st = diff(log(nasdaq.train))
+payems.train.st = diff(log(payems.train))
+unrate.train.st = unrate.train
+ussthpi.train.st = diff(log(ussthpi.train))
+totalsa.train.st = totalsa.train
+
+plot(cusr.train.st)
+plot(dff.train.st)
+plot(nasdaq.train.st)
+plot(payems.train.st)
+plot(totalsa.train.st)
+plot(unrate.train.st)
+plot(ussthpi.train.st)
+```
+
+
+# Part A: Structural Model
+## Setting up Time Series
+```{r}
+cusr = ts(cusr.train.st, frequency = 4, start=c(1979,2))
+dff = ts(dff.train.st, frequency = 4, start=c(1979,2))
+nas = ts(nasdaq.train.st, frequency = 4, start=c(1979,2))
+payems = ts(payems.train.st, frequency = 4, start=c(1979,2))
+unrate = ts(unrate.train.st, frequency = 4, start=c(1979,2))
+ussthpi = ts(ussthpi.train.st, frequency = 4, start=c(1979,2))
+totalsa = ts(totalsa.train.st, frequency = 4, start=c(1979,2))
+
+
+
+df = as.data.frame(cbind(cusr, dff,nas,payems,unrate,ussthpi,totalsa))
+```
+## Generating Linear Regression
+```{r}
+cor(df, use="complete.obs")
+
+mod01 = lm(totalsa ~ . , data=df)
+summary(mod01)
+
+mod01.step = stepAIC(mod01, direction="both")
+summary(mod01.step)
+```
+## ARIMA on Significant Vars
+```{r}
+dff_for = forecast(auto.arima(dff),4)
+nas_for = forecast(auto.arima(nas),4)
+unrate_for = forecast(auto.arima(unrate),4)
+ussthpi_for = forecast(auto.arima(ussthpi),4)
+
+a_tests = data.frame(dff_for$mean, nas_for$mean, unrate_for$mean, ussthpi_for$mean)
+colnames(a_tests) = c("dff", "nas", "unrate", "ussthpi")
+
+a_test.pred = predict(mod01.step,a_tests)
+a_test.pred
+
+mean(a_test.pred - as.numeric(totalsa.test))
+```
+# Part B: A Reduced-form Model
+```{r}
+totalsa.arima = auto.arima(totalsa)
+summary(totalsa.arima)
+totalsa.forecast = forecast(totalsa.arima, 4)
+plot(totalsa.forecast)
+accuracy(totalsa.forecast)
+
+mean(as.numeric(totalsa.forecast$mean) - as.numeric(totalsa.test))
+```
+# Part C. Mixed Form Model
+```{r}
+lag.mod = lm(totalsa ~ lag(totalsa) + dff + unrate, data = df)
+step.coef = as.matrix(lag.mod$coefficients)
+
+test1 = c(1, totalsa[length(totalsa)], dff_for$mean[1], unrate_for$mean[1])
+test1.ans = test1 %*% step.coef
+
+test2 = c(1, test1.ans, dff_for$mean[2], unrate_for$mean[2])
+test2.ans = test2 %*% step.coef
+
+test3 = c(1, test2.ans, dff_for$mean[3], unrate_for$mean[3])
+test3.ans = test3 %*% step.coef
+
+test4 = c(1, test3.ans, dff_for$mean[4], unrate_for$mean[4])
+test4.ans = test4 %*% step.coef
+
+mean(test1.ans - as.numeric(totalsa.test[1]),
+     test2.ans - as.numeric(totalsa.test[2]),
+     test3.ans - as.numeric(totalsa.test[3]),
+     test4.ans - as.numeric(totalsa.test[4]),
+     )
+```
+
+

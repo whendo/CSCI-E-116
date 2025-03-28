@@ -1,0 +1,191 @@
+---
+title: "Assignment05_Submission"
+author: "Bill Henderson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(dplyr)
+library(tidyverse)
+library(kableExtra)
+library(ggplot2)
+library(lubridate)
+library(forecast)
+library(MASS)
+library(prophet)
+```
+
+# Data Import
+
+```{r}
+# trainset data is from 4/1/2016 to 2/28/2017 
+# testset data is from 3/1/2017 to 3/19/2017
+ds = read_excel("TVlift.xlsx") %>%
+  mutate(dow = factor(wday(date)),
+         month = (month(date)),
+         dom = (day(date)))
+train = ds[ds$date <= as.Date("2017-02-28"),]
+test = ds[ds$date > as.Date("2017-02-28"),]
+
+"Training Set"
+  train %>%
+    summarize(first_date = min(date), last_date = max(date)) %>%
+    kbl() %>%
+    kable_styling(full_width = F )
+
+"Test Set"
+  test %>%
+    summarize(first_date = min(date), last_date = max(date)) %>%
+    kbl() %>%
+    kable_styling(full_width = F )
+```
+# Models
+## Linear Regressions
+### Quick EDA
+```{r}
+train %>%
+  dplyr::select(-date) %>%
+  summary() %>% 
+  kbl() %>% 
+  kable_styling(full_width = F)
+
+cor(dplyr::select(train,-c(date,dom,dow,month))) %>% kbl() %>% kable_styling(full_width = F)
+
+plot(train)
+
+
+boxplot(train$sb)
+boxplot(train$snb)
+boxplot(train$tv)
+boxplot(train$sales)
+
+## convert to long format with tidyr::pivot_longer
+  pivot_longer(train, cols = snb:tv) |>
+  ggplot(aes(x=date, y=value, colour=name)) +
+  geom_line() 
+
+  
+  pivot_longer(train, cols = c(sb,sales)) |>
+  ggplot(aes(x=date, y=value, colour=name)) +
+  geom_line() 
+```
+No NA's in our data site, which is very nice. Seeing a very tight correlation between snb and sales. "snb" and tv may be a little too tightly correlated as well, but we'll try and see how it looks.Also appears to have some stationarity and homoskedacity issues with a couple vars.
+
+May be some outliers that could be removed as well, especially above the upper quartile.
+
+
+## Models
+```{r}
+reg01 = lm(sales~sb +snb +tv +dow +month +dom, train[train$date >= as.Date(2016-11-10),])
+ggAcf(residuals(reg01))
+s01 = summary(reg01)
+
+reg02 = lm(sales~sb +snb +tv +dow +month, train[train$date >= as.Date(2016-11-10),])
+ggAcf(residuals(reg02))
+s02 = summary(reg02)
+
+reg03 = lm(sales~sb +snb +tv +dow +month + lag(sales,1), train[train$date >= as.Date(2016-11-10),])
+ggAcf(residuals(reg03))
+s03 = summary(reg03)
+
+reg04 = lm(sales~sb +snb +dow +month + lag(sales,1), train)
+ggAcf(residuals(reg04))
+s04 = summary(reg04)
+
+reg05 = lm(sales~sb +snb +dow +month + lag(sales,1) + lag(tv,7), train)
+ggAcf(residuals(reg05))
+s05 = summary(reg05)
+
+reg06 = lm(sales~sb +snb +dow +month + lag(sales,1) + lag(tv,14), train)
+ggAcf(residuals(reg06))
+s06 = summary(reg06)
+
+# removed the highly correlated snb from the model with all sig. vars
+# with highest R^2
+reg07 = lm(sales~sb +dow +month + lag(sales,1), train)
+ggAcf(residuals(reg07))
+s07 = summary(reg07)
+
+step = stepAIC(reg01)
+ggAcf(residuals(step))
+step.sum = summary(step, direction="both")
+
+tv.lim.df = train[train$date >= as.Date(2016-11-10),]
+ari01 = auto.arima(tv.lim.df$sales, xreg = cbind(tv.lim.df$sb, tv.lim.df$snb, tv.lim.df$tv))
+ggAcf(residuals(ari01))
+s.ari01 = summary(ari01)
+
+data.frame(metrics = c("r.sq","adj.r.sq", "std err"),
+           reg01 = c(s01$r.squared, s01$adj.r.squared, s01$sigma),
+           reg02 = c(s02$r.squared, s02$adj.r.squared, s02$sigma),
+           reg03 = c(s03$r.squared, s03$adj.r.squared, s03$sigma),
+           reg04 = c(s04$r.squared, s04$adj.r.squared, s04$sigma),
+           reg05 = c(s05$r.squared, s05$adj.r.squared, s05$sigma),
+           reg06 = c(s06$r.squared, s06$adj.r.squared, s06$sigma),
+           reg07 = c(s07$r.squared, s07$adj.r.squared, s07$sigma),
+           step = c(step.sum$r.squared, step.sum$adj.r.squared, step.sum$sigma)
+           ) %>%
+  mutate(across(2:9, \(x) round(x,3))) %>%
+  kbl() %>%
+  kable_styling(full_width = F)
+
+s.ari01
+```
+## Predictions
+
+```{r}
+reg.preds = data.frame(
+  date = test$date,
+  sales.actual = test$sales
+  ) %>%
+  mutate(
+    pred.ari01 = predict(ari01, newxreg = cbind(test$sb, test$snb, test$tv))$pred,
+    pred01 = predict(reg01, test),
+    pred02 = predict(reg02, test),
+    pred03 = predict(reg03, test),
+    pred04 = predict(reg04, test),
+    pred05 = predict(reg05, test),
+    pred06 = predict(reg06, test),
+    pred07 = predict(reg07, test),
+    step.pred = predict(step, test)
+  )
+
+rmse01 = sqrt(mean((reg.preds$pred01-reg.preds$sales.actual)^2, na.rm = T))
+rmse02 = sqrt(mean((reg.preds$pred02-reg.preds$sales.actual)^2, na.rm = T))
+rmse03 = sqrt(mean((reg.preds$pred03-reg.preds$sales.actual)^2, na.rm = T))
+rmse04 = sqrt(mean((reg.preds$pred04-reg.preds$sales.actual)^2, na.rm = T))
+rmse05 = sqrt(mean((reg.preds$pred05-reg.preds$sales.actual)^2, na.rm = T))
+rmse06 = sqrt(mean((reg.preds$pred06-reg.preds$sales.actual)^2, na.rm = T))
+rmse07 = sqrt(mean((reg.preds$pred07-reg.preds$sales.actual)^2, na.rm = T))
+rmse.ari = sqrt(mean((reg.preds$pred.ari01-reg.preds$sales.actual)^2, na.rm = T))
+rmse.step = sqrt(mean((reg.preds$step.pred-reg.preds$sales.actual)^2, na.rm = T))
+
+data.frame(metrics = c("rmse"),
+           reg01 = rmse01,
+           reg02 = rmse02,
+           reg03 = rmse03,
+           reg04 = rmse04,
+           reg05 = rmse05,
+           reg06 = rmse06,
+           reg07 = rmse07,
+           reg.arima = rmse.ari,
+           reg.step = rmse.step) %>%
+  mutate(across(2:10, \(x) round(x,3))) %>%
+  kbl() %>%
+  kable_styling(full_width = F)
+
+```
+
+```{r}
+## convert to long format with tidyr::pivot_longer
+  pivot_longer(reg.preds, cols = c(sales.actual, pred03, pred04, pred05, pred.ari01)) |>
+  ggplot(aes(x=date, y=value, colour=name)) +
+  geom_line() 
+
+s05
+```
+
+
