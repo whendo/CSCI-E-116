@@ -1,0 +1,132 @@
+---
+title: "Assignment06_submission"
+author: "Bill Henderson"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(quantmod) 
+library(tseries)
+library(forecast)
+library(readxl) 
+library(fpp2)
+library(vars)
+library(lmtest)
+library(ggplot2)
+library(ggfortify)
+library(ggpubr)
+```
+
+# Part A. Running Three Models: VAR Level, VAR Growth and ARIMA
+## Import the following data via quantmod library
+
+```{r}
+getSymbols("DCOILWTICO", src="FRED") # Oil price
+getSymbols("NASDAQCOM", src="FRED") # NASDAQ stock price
+getSymbols("PAYEMS", src="FRED") # Nonfarm payroll jobs
+getSymbols("CPILFESL", src="FRED") # Core Consumer Price Index
+getSymbols("DFF", src="FRED") # Federal Fund Rate
+```
+## Set the full sample period from 1986-02-01 to 2025-1-31 and convert the whole series to
+monthly frequency. Note: use na.rm=T if there are missing values.
+```{r}
+date.range = "1986-02-01/2025-01-31"
+oil.price = apply.monthly(DCOILWTICO[date.range], colMeans, na.rm = T)
+stock = apply.monthly(NASDAQCOM[date.range], colMeans, na.rm = T)
+payroll = apply.monthly(PAYEMS[date.range], colMeans, na.rm = T)
+idx = apply.monthly(CPILFESL[date.range], colMeans, na.rm = T)
+fund.rate = apply.monthly(DFF[date.range], colMeans, na.rm = T)
+```
+
+## Plot the series and convert them to the time series object using “ts” function.
+```{r}
+oil.price.ts = ts(oil.price, frequency = 12, start = c(1986,2))
+oil.plot = autoplot(oil.price.ts, main="Oil Price")
+
+stock.ts = ts(stock, frequency = 12, start = c(1986,2))
+stock.plot = autoplot(stock.ts, main="NASDAQ Stock Price")
+
+payroll.ts = ts(payroll, frequency = 12, start = c(1986,2))
+payroll.plot = autoplot(payroll.ts, main="Payroll")
+
+idx.ts = ts(idx, frequency = 12, start = c(1986,2))
+idx.plot = autoplot(idx.ts, main="Consumer Price Index")
+
+fund.rate.ts = ts(fund.rate, frequency = 12, start = c(1986,2))
+fund.plot = autoplot(fund.rate.ts, main="Federal Fund Rate")
+
+ggarrange(oil.plot, stock.plot, payroll.plot, idx.plot, fund.plot, 
+          nrow = 2, ncol = 3)
+```
+
+## Create a separate time series data frame
+
+```{r}
+data0 = cbind(oil.price.ts, stock.ts, payroll.ts, idx.ts, fund.rate.ts)
+colnames(data0) = c("oil", "stock", "job", "cpi", "frr")
+
+data1 = cbind(
+  diff(log(oil.price.ts)), 
+  diff(log(stock.ts)), 
+  diff(log(payroll.ts)), 
+  diff(log(idx.ts)), 
+  fund.rate.ts
+  )
+
+data1 = data1[complete.cases(data1),]
+
+colnames(data1) = c("oil_g", "stock_g", "job_g", "cpi_g", "frr")
+```
+
+## Create the train sets for the above two data frames using
+```{r}
+data00 = window(data0, start=c(1986, 3), end=c(2024, 11))
+```
+
+## Run two VAR models
+```{r}
+
+var00 = VAR(data0, p=12, type="both")  
+summary(var00)
+
+imp00.oil = irf(var00, impulse="oil", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp00.oil)
+
+imp00.stock = irf(var00, impulse="stock", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp00.stock)
+
+imp00.job = irf(var00, impulse="job", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp00.job)
+
+imp00.cpi = irf(var00, impulse="cpi", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp00.cpi)
+
+
+
+var01 = VAR(data1, p=12, type="const")  
+summary(var01)
+
+imp01.oil = irf(var01, impulse="oil_g", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp01.oil)
+
+imp01.stock = irf(var01, impulse="stock_g", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp01.stock)
+
+imp01.job = irf(var01, impulse="job_g", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp01.job)
+
+imp01.cpi = irf(var01, impulse="cpi_g", response="frr", n.ahead=12, ortho=F, runs=100)
+plot(imp01.cpi)
+```
+
+## Plot the forecasts of these two models
+```{r}
+pred00 = predict(var00, n.ahead = 12, ci=0.95)
+
+pred01 = predict(var01, n.ahead = 12, ci=0.95)
+
+```
+
